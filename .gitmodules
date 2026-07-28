@@ -1,0 +1,3 @@
+[submodule "code/offline"]
+	path = code/offline
+	url = git@code.ihep.ac.cn:herdos/offline.git

@@ -1,0 +1,20 @@
+# Large inputs and generated outputs
+/data/
+/runs/
+/results/
+/figures/
+/enc/
+
+# Common scientific data and logs
+*.root
+*.log
+*.out
+*.err
+core
+core.*
+
+# Local editor and OS files
+.DS_Store
+*~
+*.swp
+
