@@ -6,14 +6,16 @@ HERDOS 原版 `BasicTrackingAction` 会过滤掉 CALO 内产生的大多数次�
 ROOT 文件中的 `mcparts` 不能确认 gamma 是否发生了
 `gamma -> electron + positron` 对产生。
 
-本修改保存 Geant4 创建过程为 `conv` 的电子和正电子，包括低于默认 5 MeV
-次级粒子阈值的转换产物。
+本修改只保存由初级入射 gamma 通过 Geant4 `conv` 过程直接产生的第一对电子和
+正电子，包括低于默认 5 MeV 次级粒子阈值的转换产物。后续簇射 gamma 的转换
+产物不保存。
 
 ## 版本与位置
 
 - HERDOS 基线提交：`7cd27b7`
 - 个人开发分支：`zhangjin/gamma-conversion-truth`
-- 修改提交：`0df164a Save gamma conversion products in MC truth`
+- 初始提交：`0df164a Save gamma conversion products in MC truth`
+- 范围收紧提交：`da985c9 Keep only primary gamma first conversion truth`
 - 源码工作树：`/scratchfs/herd/zhangjin0101/HERDOS/v2025a/source`
 - 安装目录：`/scratchfs/herd/zhangjin0101/HERDOS/v2025a/install`
 - 官方仓库 push 地址已禁用，不要把个人修改推送到课题组仓库。
@@ -36,10 +38,10 @@ ROOT 文件中的 `mcparts` 不能确认 gamma 是否发生了
 | 条件 | 判断方法 |
 |---|---|
 | 初级粒子 | `(simstat & 1) != 0` |
-| gamma 对转换产物 | `(simstat & 2) != 0` |
+| 初级 gamma 的第一对转换产物 | `(simstat & 2) != 0` |
 
-严格确认一次对转换时，应找到同一顶点的一对 `PDG=11` 和 `PDG=-11`，
-二者 `parentID` 相同，并且 `simstat & 2` 非零。
+严格确认第一次对转换时，应找到同一顶点的一对 `PDG=11` 和 `PDG=-11`，
+二者 `parentID` 都等于初级 gamma 的 `trackID`，并且 `simstat & 2` 非零。
 
 ## 已完成验证
 
@@ -53,15 +55,14 @@ conversion vertex = (5.434, -4.371, -6.379) cm
 |p(e+)| + |p(e-)| = 0.5406 + 0.4594 ~= 1.0000 GeV
 ```
 
-测试文件：
+最终范围收紧验证文件：
 
 ```text
-/herdfs/user/zhangjin0101/HERD/results/v2025a-test/gamma_conversion_truth_test.root
+/herdfs/user/zhangjin0101/HERD/results/v2025a-test/my_gamma_first_conversion_only.root
 ```
 
-注意：该测试文件生成后又修正了电子/正电子的 `charge` 写法，所以此测试文件中的
-`charge` 仍为 0；它的 PDG、父子关系、顶点和 `simstat` 验证有效。此后用当前安装
-重新生成的文件会写出电子 `charge=-1`、正电子 `charge=+1`。
+该文件只有 5 条 `mcparts`：3 条原有初级/辅助轨迹，加第一对电子和正电子。
+电子 `charge=-1`，正电子 `charge=+1`。
 
 ## 文件大小影响
 
@@ -70,12 +71,11 @@ conversion vertex = (5.434, -4.371, -6.379) cm
 | 文件 | 大小 |
 |---|---:|
 | 修改前 `my_first_gamma.root` | 64,227 bytes |
-| 修改后 `gamma_conversion_truth_test.root` | 66,190 bytes |
-| 增量 | 1,963 bytes（3.06%） |
+| 只保存第一次转换 `my_gamma_first_conversion_only.root` | 64,414 bytes |
+| 增量 | 187 bytes（0.29%） |
 
-这个 1 GeV 事件保存了约 34 对转换产物。体积增幅与入射能量、簇射复杂度和
-对转换次数有关，不能把 3.06% 当成所有作业的固定比例。正式大规模生产前应先用
-100–1000 个事例测量平均文件大小和运行时间。
+由于每个发生首次对转换的事件最多新增一对粒子，体积增量受到控制。不过 ROOT
+压缩和事件内容会影响比例，仍应在正式生产前用小样本测量平均文件大小。
 
 ## 运行方法
 
@@ -105,6 +105,7 @@ python3 "$HERDOS_INSTALL/scripts/SimConfiger/devrun.py" \
 
 ```text
 development/herdos-patches/0001-Save-gamma-conversion-products-in-MC-truth.patch
+development/herdos-patches/0002-Keep-only-primary-gamma-first-conversion-truth.patch
 ```
 
 在与基线兼容的 HERDOS 源码目录中执行：
@@ -112,6 +113,7 @@ development/herdos-patches/0001-Save-gamma-conversion-products-in-MC-truth.patch
 ```bash
 git switch -c zhangjin/gamma-conversion-truth
 git am /herdfs/user/zhangjin0101/HERD/development/herdos-patches/0001-Save-gamma-conversion-products-in-MC-truth.patch
+git am /herdfs/user/zhangjin0101/HERD/development/herdos-patches/0002-Keep-only-primary-gamma-first-conversion-truth.patch
 cmake --build /scratchfs/herd/zhangjin0101/HERDOS/v2025a/build --target SimConfiger -j4
 cmake --install /scratchfs/herd/zhangjin0101/HERDOS/v2025a/build
 ```
@@ -122,7 +124,31 @@ cmake --install /scratchfs/herd/zhangjin0101/HERDOS/v2025a/build
 
 1. 这是个人分析扩展，不是课题组官方版本。
 2. 不要修改或启用官方 GitLab 的 push 地址。
-3. 当前会保存簇射中每一次 `conv` 产生的电子和正电子，而不只是第一次转换。
-4. 高能事件可能显著增加 `mcparts` 数量；大规模生产前必须做小样本容量测试。
+3. 当前只保存初级入射 gamma 直接转换产生的第一对电子和正电子。
+4. 如果以后研究完整电磁簇射真值，需要重新设计独立开关，不能直接用当前精简文件。
 5. 原有 ROOT schema 没有变化，旧读取程序仍可读取新文件。
-6. 分析时必须使用 `simstat & 2` 和父子关系，不要只凭 `PDG=11/-11` 判断首次转换。
+6. 分析时必须同时检查 `simstat & 2`、PDG 和 `parentID`，不要只凭电子/正电子判断首次转换。
+
+## 读取第一次转换
+
+分析宏：
+
+```text
+scripts/analysis/read_first_gamma_conversion.C
+```
+
+读取默认文件：
+
+```bash
+root -l -b -q \
+  /herdfs/user/zhangjin0101/HERD/scripts/analysis/read_first_gamma_conversion.C
+```
+
+读取指定文件：
+
+```bash
+root -l -b -q \
+  '/herdfs/user/zhangjin0101/HERD/scripts/analysis/read_first_gamma_conversion.C("/path/to/input.root")'
+```
+
+输出包括转换顶点、e⁻/e⁺ 三动量、单位方向向量、相对初级 gamma 的偏转角和方位角。

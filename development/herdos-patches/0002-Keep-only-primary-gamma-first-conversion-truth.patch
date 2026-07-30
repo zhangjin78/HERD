@@ -1,0 +1,84 @@
+From da985c9bad5968690959372a576bb2afe066a652 Mon Sep 17 00:00:00 2001
+From: zhangjin0101 <zhangjin0101@lxlogin008.ihep.ac.cn>
+Date: Thu, 30 Jul 2026 18:42:05 +0800
+Subject: [PATCH] Keep only primary gamma first conversion truth
+
+---
+ .../SimConfiger/src/BasicTrackingAction.cc     | 18 +++++++++++++-----
+ .../SimConfiger/src/BasicTrackingAction.hh     |  3 ++-
+ 2 files changed, 15 insertions(+), 6 deletions(-)
+
+diff --git a/Simulation/SimConfig/SimConfiger/src/BasicTrackingAction.cc b/Simulation/SimConfig/SimConfiger/src/BasicTrackingAction.cc
+index f08496d..ae0f205 100755
+--- a/Simulation/SimConfig/SimConfiger/src/BasicTrackingAction.cc
++++ b/Simulation/SimConfig/SimConfiger/src/BasicTrackingAction.cc
+@@ -4,7 +4,8 @@
+ BasicTrackingAction::BasicTrackingAction(Task*t, double secthres):
+    G4UserTrackingAction(),
+    mTask(t),
+-   mSecondaryThresholdMeV(secthres>0?secthres:defSecEkThresMeV)
++   mSecondaryThresholdMeV(secthres>0?secthres:defSecEkThresMeV),
++   mPrimaryGammaTrackID(-1)
+ {
+ 
+ }
+@@ -21,6 +22,10 @@ BasicTrackingAction::~BasicTrackingAction()
+ #include <EventDataModel/MCParticleCollection.h>
+ void BasicTrackingAction::PreUserTrackingAction(G4Track const* track)
+ {
++   if (track->GetParentID() == 0 &&
++       track->GetParticleDefinition()->GetPDGEncoding() == 22)
++      mPrimaryGammaTrackID = track->GetTrackID();
++
+    if(not selectTrack(track)) return;
+ 
+    G4ThreeVector const& vpos = track->GetVertexPosition();
+@@ -66,7 +71,9 @@ bool BasicTrackingAction::isGammaConversionProduct(G4Track const* track) const
+       return false;
+ 
+    G4VProcess const* creator = track->GetCreatorProcess();
+-   return creator && creator->GetProcessName() == "conv";
++   return creator &&
++          creator->GetProcessName() == "conv" &&
++          track->GetParentID() == mPrimaryGammaTrackID;
+ }
+ 
+ bool BasicTrackingAction::selectTrack(G4Track const* track)
+@@ -95,9 +102,10 @@ bool BasicTrackingAction::selectTrack(G4Track const* track)
+    if( track->GetParentID() == 0 ) return true;
+ 
+    /*
+-    * Keep both members of every gamma-conversion pair, including products
+-    * created inside CALO and products below the generic secondary threshold.
+-    * kGammaConversionProduct in MCParticle.simstat records why they were kept.
++    * Keep only the pair produced by conversion of the primary input gamma,
++    * including products created inside CALO and products below the generic
++    * secondary threshold. kGammaConversionProduct in MCParticle.simstat
++    * records why they were kept.
+     */
+    if( isGammaConversionProduct(track) ) return true;
+ 
+diff --git a/Simulation/SimConfig/SimConfiger/src/BasicTrackingAction.hh b/Simulation/SimConfig/SimConfiger/src/BasicTrackingAction.hh
+index c68e0df..8617d22 100755
+--- a/Simulation/SimConfig/SimConfiger/src/BasicTrackingAction.hh
++++ b/Simulation/SimConfig/SimConfiger/src/BasicTrackingAction.hh
+@@ -3,7 +3,7 @@
+  *
+  *  Records primary and some secondary particles, including
+  *  - secondary nuclei
+- *  - gamma convertion
++ *  - first conversion products of the primary gamma
+  *  - other down going secondary outside calo
+  *  - optional back splash particles outside calo
+  *
+@@ -30,6 +30,7 @@ class BasicTrackingAction:public G4UserTrackingAction
+    private:
+       Task* mTask;
+       double mSecondaryThresholdMeV;
++      int mPrimaryGammaTrackID;
+       bool selectTrack(G4Track const*);
+       bool isGammaConversionProduct(G4Track const*) const;
+ };
+-- 
+2.43.5
+
