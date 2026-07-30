@@ -156,7 +156,7 @@ export PATH=/afs/ihep.ac.cn/soft/common/sysgroup/hep_job/bin:$PATH
 submit_cmd=(
   hep_sub "$runner"
   -g herd
-  -gwn HERD
+  # -g HERD
   -p physical
   -u vanilla
   -os AlmaLinux9
