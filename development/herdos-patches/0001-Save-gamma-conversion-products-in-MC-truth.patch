@@ -1,0 +1,105 @@
+From 0df164afeb31b194f730d048b7d756f7c7e21e89 Mon Sep 17 00:00:00 2001
+From: zhangjin0101 <zhangjin0101@lxlogin008.ihep.ac.cn>
+Date: Thu, 30 Jul 2026 17:56:36 +0800
+Subject: [PATCH] Save gamma conversion products in MC truth
+
+---
+ .../SimConfiger/src/BasicTrackingAction.cc    | 28 +++++++++++++++++--
+ .../SimConfiger/src/BasicTrackingAction.hh    |  8 +++++-
+ 2 files changed, 33 insertions(+), 3 deletions(-)
+
+diff --git a/Simulation/SimConfig/SimConfiger/src/BasicTrackingAction.cc b/Simulation/SimConfig/SimConfiger/src/BasicTrackingAction.cc
+index 36138f2..f08496d 100755
+--- a/Simulation/SimConfig/SimConfiger/src/BasicTrackingAction.cc
++++ b/Simulation/SimConfig/SimConfiger/src/BasicTrackingAction.cc
+@@ -35,10 +35,14 @@ void BasicTrackingAction::PreUserTrackingAction(G4Track const* track)
+    part.setMomentum(edm::Vector3f(mom / GeV));
+    auto pdef = track->GetParticleDefinition();
+    part.setPdgID(pdef->GetPDGEncoding());
+-   part.setCharge(pdef->GetAtomicNumber()); // TODO also for leptons
++   part.setCharge(static_cast<short>(pdef->GetPDGCharge() / eplus));
+    part.setMass(pdef->GetAtomicMass());
+    part.setTrackID(track->GetTrackID());
+    part.setParentID(track->GetParentID());
++   std::uint32_t simstat = 0;
++   if (track->GetParentID() == 0) simstat |= kPrimary;
++   if (isGammaConversionProduct(track)) simstat |= kGammaConversionProduct;
++   part.setSimstat(simstat);
+    LogDebug << "collection mcparts created" << G4endl;
+        for(auto p : (*mcparts)){
+ 	   LogDebug << "Particle "<< p.getObjectID().index<<" ID : "
+@@ -48,9 +52,23 @@ void BasicTrackingAction::PreUserTrackingAction(G4Track const* track)
+ 
+ #include <G4ParticleDefinition.hh>
+ #include <G4Gamma.hh>
++#include <G4Electron.hh>
++#include <G4Positron.hh>
++#include <G4VProcess.hh>
+ #include <G4PionZero.hh>
+ #include <G4Eta.hh>
+ #include <G4EtaPrime.hh>
++
++bool BasicTrackingAction::isGammaConversionProduct(G4Track const* track) const
++{
++   G4ParticleDefinition const* def = track->GetParticleDefinition();
++   if (def != G4Electron::Definition() && def != G4Positron::Definition())
++      return false;
++
++   G4VProcess const* creator = track->GetCreatorProcess();
++   return creator && creator->GetProcessName() == "conv";
++}
++
+ bool BasicTrackingAction::selectTrack(G4Track const* track)
+ {
+    /* 
+@@ -76,6 +94,13 @@ bool BasicTrackingAction::selectTrack(G4Track const* track)
+    /* primary particle */
+    if( track->GetParentID() == 0 ) return true;
+ 
++   /*
++    * Keep both members of every gamma-conversion pair, including products
++    * created inside CALO and products below the generic secondary threshold.
++    * kGammaConversionProduct in MCParticle.simstat records why they were kept.
++    */
++   if( isGammaConversionProduct(track) ) return true;
++
+    /* nuclei, put here before the next Ek cut because nuclei may have very low Ek */
+    if( def->GetAtomicNumber() > 1 ) return true;
+ 
+@@ -123,4 +148,3 @@ bool BasicTrackingAction::selectTrack(G4Track const* track)
+    return true;
+ 
+ }
+-
+diff --git a/Simulation/SimConfig/SimConfiger/src/BasicTrackingAction.hh b/Simulation/SimConfig/SimConfiger/src/BasicTrackingAction.hh
+index 105118a..c68e0df 100755
+--- a/Simulation/SimConfig/SimConfiger/src/BasicTrackingAction.hh
++++ b/Simulation/SimConfig/SimConfiger/src/BasicTrackingAction.hh
+@@ -12,11 +12,17 @@
+ #pragma once
+ 
+ #include <G4UserTrackingAction.hh>
++#include <cstdint>
+ class Task;
+ 
+ class BasicTrackingAction:public G4UserTrackingAction
+ {
+    public:
++      enum SimStatus : std::uint32_t {
++         kPrimary = 1u << 0,
++         kGammaConversionProduct = 1u << 1
++      };
++
+       BasicTrackingAction(Task*t, double secThresMeV=-1);
+       ~BasicTrackingAction()override;
+       void PreUserTrackingAction(const G4Track*)override;
+@@ -25,5 +31,5 @@ class BasicTrackingAction:public G4UserTrackingAction
+       Task* mTask;
+       double mSecondaryThresholdMeV;
+       bool selectTrack(G4Track const*);
++      bool isGammaConversionProduct(G4Track const*) const;
+ };
+-
+-- 
+2.43.5
+
