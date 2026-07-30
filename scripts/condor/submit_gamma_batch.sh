@@ -156,7 +156,6 @@ export PATH=/afs/ihep.ac.cn/soft/common/sysgroup/hep_job/bin:$PATH
 submit_cmd=(
   hep_sub "$runner"
   -g herd
-  # -g HERD
   -p physical
   -u vanilla
   -os AlmaLinux9
@@ -217,8 +216,8 @@ mkdir -p "$output_dir" "$log_dir"
   printf 'walltime=%s\n' "$walltime"
   printf '%s\n' 'herdos_install=/scratchfs/herd/zhangjin0101/HERDOS/v2025a/install'
   printf '%s\n' 'herdos_branch=zhangjin/gamma-conversion-truth'
-  printf '%s\n' 'herdos_commit=da985c9'
-  printf '%s\n' 'truth_scope=primary_gamma_first_conversion_only'
+  printf '%s\n' 'herdos_commit=e93260b'
+  printf '%s\n' 'truth_scope=primary_gamma_first_conversion_or_unconverted_final_state'
 } > "$manifest"
 
 echo "Submitting ${num_jobs} jobs to HERD HTCondor..."

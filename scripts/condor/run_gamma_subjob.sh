@@ -103,7 +103,7 @@ fi
   --g4mac "$g4mac" \
   --seed "$seed" \
   --runid "$run_id" \
-  --info "batch=${tag};proc=${proc_id};first_gamma_conversion_only" \
+  --info "batch=${tag};proc=${proc_id};first_gamma_conversion_or_unconverted_final" \
   -N "$nevents" \
   -o "$temporary_output"
 

@@ -1,0 +1,94 @@
+From e93260b1f1da92d71c198c24049a0e636b79d0d9 Mon Sep 17 00:00:00 2001
+From: zhangjin78 <zhangjin95@ihep.ac.cn>
+Date: Thu, 30 Jul 2026 20:46:27 +0800
+Subject: [PATCH] Save final state of unconverted primary gamma
+
+---
+ .../SimConfiger/src/BasicTrackingAction.cc    | 38 ++++++++++++++++++-
+ .../SimConfiger/src/BasicTrackingAction.hh    |  4 +-
+ 2 files changed, 40 insertions(+), 2 deletions(-)
+
+diff --git a/Simulation/SimConfig/SimConfiger/src/BasicTrackingAction.cc b/Simulation/SimConfig/SimConfiger/src/BasicTrackingAction.cc
+index ae0f205..dce051c 100755
+--- a/Simulation/SimConfig/SimConfiger/src/BasicTrackingAction.cc
++++ b/Simulation/SimConfig/SimConfiger/src/BasicTrackingAction.cc
+@@ -15,7 +15,10 @@ BasicTrackingAction::~BasicTrackingAction()
+ 
+ 
+ #include <G4Track.hh>
++#include <G4Step.hh>
++#include <G4StepPoint.hh>
+ #include <G4SystemOfUnits.hh>
++#include <G4VProcess.hh>
+ #include <SniperKernel/SniperLog.h>
+ #include <SniperKernel/SniperPtr.h>
+ #include <PodioDataSvc/DataHandle.hh>
+@@ -55,11 +58,44 @@ void BasicTrackingAction::PreUserTrackingAction(G4Track const* track)
+        }
+ }
+ 
++void BasicTrackingAction::PostUserTrackingAction(G4Track const* track)
++{
++   if (track->GetParentID() != 0 ||
++       track->GetParticleDefinition()->GetPDGEncoding() != 22)
++      return;
++
++   G4VProcess const* process = nullptr;
++   if (track->GetStep() && track->GetStep()->GetPostStepPoint())
++      process = track->GetStep()->GetPostStepPoint()->GetProcessDefinedStep();
++
++   /*
++    * A gamma converted through the Geant4 "conv" process ends at the
++    * conversion vertex and its direct e-/e+ products are already stored.
++    * For every other terminal state, append one compact final-state snapshot.
++    * For a photon, final energy in GeV is |momentum| in GeV.
++    */
++   if (process && process->GetProcessName() == "conv") return;
++
++   static DataHandle<edm::MCParticleCollection> * m_dhMCParts =
++      new DataHandle<edm::MCParticleCollection>("mcparts", mTask);
++   edm::MCParticleCollection * mcparts = m_dhMCParts->getCollWrite();
++   edm::MutableMCParticle part = mcparts->create();
++   part.setVertex(edm::Vector3f(track->GetPosition() / cm));
++   part.setTime(track->GetGlobalTime() / ns);
++   part.setMomentum(edm::Vector3f(track->GetMomentum() / GeV));
++   auto pdef = track->GetParticleDefinition();
++   part.setPdgID(pdef->GetPDGEncoding());
++   part.setCharge(static_cast<short>(pdef->GetPDGCharge() / eplus));
++   part.setMass(pdef->GetAtomicMass());
++   part.setTrackID(track->GetTrackID());
++   part.setParentID(track->GetParentID());
++   part.setSimstat(kUnconvertedPrimaryGammaFinalState);
++}
++
+ #include <G4ParticleDefinition.hh>
+ #include <G4Gamma.hh>
+ #include <G4Electron.hh>
+ #include <G4Positron.hh>
+-#include <G4VProcess.hh>
+ #include <G4PionZero.hh>
+ #include <G4Eta.hh>
+ #include <G4EtaPrime.hh>
+diff --git a/Simulation/SimConfig/SimConfiger/src/BasicTrackingAction.hh b/Simulation/SimConfig/SimConfiger/src/BasicTrackingAction.hh
+index 8617d22..751bb75 100755
+--- a/Simulation/SimConfig/SimConfiger/src/BasicTrackingAction.hh
++++ b/Simulation/SimConfig/SimConfiger/src/BasicTrackingAction.hh
+@@ -20,12 +20,14 @@ class BasicTrackingAction:public G4UserTrackingAction
+    public:
+       enum SimStatus : std::uint32_t {
+          kPrimary = 1u << 0,
+-         kGammaConversionProduct = 1u << 1
++         kGammaConversionProduct = 1u << 1,
++         kUnconvertedPrimaryGammaFinalState = 1u << 2
+       };
+ 
+       BasicTrackingAction(Task*t, double secThresMeV=-1);
+       ~BasicTrackingAction()override;
+       void PreUserTrackingAction(const G4Track*)override;
++      void PostUserTrackingAction(const G4Track*)override;
+       static double constexpr defSecEkThresMeV = 5.; //< default threshold for saving secondary particles, Ek=5MeV/c^2 -> p~=97MV/c for proton
+    private:
+       Task* mTask;
+-- 
+2.43.5
+

@@ -89,6 +89,20 @@ void read_first_gamma_conversion(
     }
 
     std::cout << "EVENT " << event << " mcparts=" << n << "\n";
+    for (const auto& gammaFinal : particles) {
+      if (gammaFinal.pdg != 22 || (gammaFinal.simstat & 4u) == 0u) continue;
+      const double energy = std::sqrt(
+          gammaFinal.px*gammaFinal.px +
+          gammaFinal.py*gammaFinal.py +
+          gammaFinal.pz*gammaFinal.pz);
+      std::cout << "UNCONVERTED_GAMMA_FINAL"
+                << " position=(" << gammaFinal.x << ","
+                << gammaFinal.y << "," << gammaFinal.z << ") cm"
+                << " momentum=(" << gammaFinal.px << ","
+                << gammaFinal.py << "," << gammaFinal.pz << ") GeV"
+                << " energy=" << energy << " GeV\n";
+    }
+
     for (const auto& gamma : particles) {
       if (gamma.pdg != 22 || (gamma.simstat & 1u) == 0u) continue;
 
