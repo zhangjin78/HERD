@@ -196,6 +196,29 @@ def publish(scratch, destination, mode):
         raise
 
 
+def publish_figures(scratch, figures_base, dataset_id, tag):
+    destination = figures_base / dataset_id / "stage01" / tag
+    destination.mkdir(parents=True, exist_ok=True)
+    published = []
+    for source in sorted(scratch.glob("*.png")):
+        target = destination / source.name
+        source_hash = sha256(source)
+        if target.exists():
+            if target.stat().st_size > 0 and sha256(target) == source_hash:
+                published.append(target)
+                continue
+            raise RuntimeError(f"refusing to replace non-matching figure: {target}")
+        partial = target.with_suffix(target.suffix + ".partial")
+        if partial.exists():
+            partial.unlink()
+        shutil.copyfile(source, partial)
+        if sha256(partial) != source_hash:
+            raise RuntimeError(f"figure checksum mismatch: {source.name}")
+        partial.rename(target)
+        published.append(target)
+    return published
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("config", type=Path)
@@ -222,8 +245,14 @@ def main():
     parser.add_argument(
         "--results-base",
         type=Path,
-        default=Path("/herdfs/user/zhangjin0101/HERD/results/analysis"),
+        default=Path("/herdfs/user/zhangjin0101/HERD/results/derived"),
     )
+    parser.add_argument(
+        "--figures-base",
+        type=Path,
+        default=Path("/herdfs/user/zhangjin0101/HERD/figures"),
+    )
+    parser.add_argument("--no-publish-figures", action="store_true")
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -305,6 +334,11 @@ def main():
         print(f"PUBLISHED={published}")
         if package_hash:
             print(f"PACKAGE_SHA256={package_hash}")
+        if not args.no_publish_figures:
+            figures = publish_figures(
+                scratch, args.figures_base, config["dataset_id"], tag
+            )
+            print(f"FIGURES_PUBLISHED={len(figures)}")
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 

@@ -38,7 +38,8 @@ results/derived/gamma_0p05to20GeV_powerlaw_m1_v2025a_prod05/
   stage02_partial_7of10_traditional_v2.tar
 ```
 
-失败的展开目录保存在 `results/analysis/_archive/`，不得作为正式结果使用。
+失败的展开目录保存在 `results/_archive/`，不得作为正式结果使用。可直接浏览的
+PNG 位于 `figures/<dataset>/<stage>/<tag>/`。
 
 ## 当前阻塞和下一触发条件
 

@@ -34,9 +34,10 @@ Git 只管理：
 ```text
 results/production/<dataset>/
 results/derived/<dataset>/
-results/analysis/<dataset>/stage01/
-results/analysis/<dataset>/stage02/
-results/analysis/<dataset>/stage03/
+results/derived/<dataset>/stage01_<tag>.tar
+results/derived/<dataset>/stage02_<tag>.tar
+results/derived/<dataset>/stage03_<tag>.tar
+figures/<dataset>/<stage>/<tag>/
 ```
 
 ROOT、CSV、图片、日志、预测、模型权重不进入 Git。`code/offline` 是课题组
@@ -90,3 +91,5 @@ python3 scripts/analysis/gamma_calo_features/run_dataset_analysis.py \
 正式 HERDFS 发布默认为单一 tar 包并采用 `.partial` 后原子改名，避免多文件
 复制导致零字节半成品。需要在节点 `/tmp` 展开检查时显式使用
 `--publish-mode directory --results-base /tmp/...`。
+每张 PNG 同时以校验后的原子写入发布到 `figures`，因此日常查看图片不需要
+解开 tar。
