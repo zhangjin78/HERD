@@ -6,6 +6,7 @@ Uses only the Python standard library so it can run on IHEP login nodes.
 
 import argparse
 import csv
+import gzip
 import math
 from collections import defaultdict
 from pathlib import Path
@@ -73,17 +74,21 @@ def main():
     split = defaultdict(lambda: defaultdict(list))
     converted_z = []
     converted_edep = []
+    true_energies = []
     anomalous = []
     converted_zero = []
     converted_low_tail = []
     category_counts = defaultdict(int)
 
-    with args.csv_file.open(newline="") as source:
+    opener = gzip.open if args.csv_file.suffix == ".gz" else open
+    with opener(args.csv_file, "rt", newline="") as source:
         reader = csv.DictReader(source)
         for row in reader:
             job = int(row["split"])
             converted = int(row["converted"])
             unconverted = int(row["unconverted_final"])
+            true_energy = float(row["true_energy_GeV"])
+            true_energies.append(true_energy)
             edep = float(row["calo_edep_GeV"])
             n_cells = int(row["n_cells"])
             n_cells_1 = int(row["n_cells_gt_1MeV"])
@@ -97,13 +102,16 @@ def main():
                 z = float(row["conversion_z_cm"])
                 converted_z.append(z)
                 converted_edep.append(edep)
-                if edep < 0.8:
-                    category_counts["converted_edep_lt_0p8"] += 1
+                response = edep / true_energy if true_energy > 0 else math.nan
+                if response < 0.8:
+                    category_counts["converted_response_lt_0p8"] += 1
                     converted_low_tail.append(
                         {
                             "event": int(row["event"]),
                             "split": job,
+                            "true_energy_GeV": true_energy,
                             "edep": edep,
+                            "response": response,
                             "conversion_x_cm": row["conversion_x_cm"],
                             "conversion_y_cm": row["conversion_y_cm"],
                             "conversion_z_cm": row["conversion_z_cm"],
@@ -158,6 +166,29 @@ def main():
 
     report = []
     report.append("# 第一阶段补充质量检查\n")
+    report.append("## 入射能量\n\n")
+    energy_stats = describe(true_energies)
+    report.append(f"- Etrue：{format_stats(energy_stats)}\n")
+    if energy_stats["n"] and energy_stats["q05"] != energy_stats["q95"]:
+        positive = [value for value in true_energies if value > 0]
+        log_min, log_max = math.log(min(positive)), math.log(max(positive))
+        log_counts = [0] * 20
+        for energy in positive:
+            index = min(
+                19,
+                int((math.log(energy) - log_min) /
+                    max(log_max - log_min, 1e-12) * 20),
+            )
+            log_counts[index] += 1
+        mean_count = sum(log_counts) / len(log_counts)
+        count_cv = math.sqrt(
+            sum((count - mean_count) ** 2 for count in log_counts) /
+            len(log_counts)
+        ) / mean_count
+        report.append(
+            f"- 20 个等宽 log(E) 区间计数相对标准差：{count_cv:.6f}"
+            "（E^-1 生成应近似均匀）\n"
+        )
     report.append("## 子作业一致性\n")
     report.append(
         "| split | 事件数 | 转换比例 | 零沉积比例 | "
@@ -190,8 +221,8 @@ def main():
 
     report.append("\n## 低能尾和转换深度\n\n")
     report.append(
-        f"- converted 且 Edep < 0.8 GeV："
-        f"{category_counts['converted_edep_lt_0p8']} 个\n"
+        f"- converted 且 Edep/Etrue < 0.8："
+        f"{category_counts['converted_response_lt_0p8']} 个\n"
         f"- converted 且 Edep = 0：{len(converted_zero)} 个\n"
         f"- converted 样本中 corr(zconv, Edep)："
         f"{correlation(converted_z, converted_edep):.6f}\n"

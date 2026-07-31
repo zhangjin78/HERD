@@ -15,6 +15,9 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <regex>
+#include <set>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -31,6 +34,7 @@ int count(TTree* tree, const char* name) {
 
 struct EventFeature {
   long long event = 0;
+  int job = -1;
   int split = 0;
   double trueEnergy = 0;
   int converted = 0;
@@ -50,18 +54,61 @@ struct EventFeature {
   double maxCellFraction = 0;
   double pairEnergyShare = std::numeric_limits<double>::quiet_NaN();
   double pairOpeningDeg = std::numeric_limits<double>::quiet_NaN();
+  double boundaryDistanceCells = std::numeric_limits<double>::quiet_NaN();
+  double lastLayerFraction = 0;
+  int nStkHits = 0;
+  double stkEdep = 0;
+  std::vector<double> layerEdep = std::vector<double>(21, 0.0);
 };
+
+std::set<int> parseJobs(const char* text) {
+  std::set<int> jobs;
+  std::stringstream stream(text ? text : "");
+  std::string token;
+  while (std::getline(stream, token, ','))
+    if (!token.empty()) jobs.insert(std::stoi(token));
+  return jobs;
+}
+
+int jobFromFilename(const std::string& filename) {
+  std::smatch match;
+  if (std::regex_search(filename, match, std::regex("job([0-9]{6})")))
+    return std::stoi(match[1]);
+  return -1;
+}
 
 void saveCanvas(TCanvas& canvas, const std::string& outputDir,
                 const std::string& name) {
   canvas.SaveAs((outputDir + "/" + name + ".png").c_str());
   canvas.SaveAs((outputDir + "/" + name + ".pdf").c_str());
 }
+
+std::vector<double> logEdges(double minimum, double maximum, int bins) {
+  if (minimum <= 0 || maximum <= minimum) {
+    minimum = std::max(1e-6, minimum * 0.9);
+    maximum = std::max(minimum * 1.01, maximum * 1.1);
+  }
+  std::vector<double> edges(bins + 1);
+  const double logMin = std::log(minimum);
+  const double step = (std::log(maximum) - logMin) / bins;
+  for (int i = 0; i <= bins; ++i)
+    edges[i] = std::exp(logMin + i * step);
+  return edges;
+}
 }
 
 void analyze_gamma_calo_ml(
     const char* inputPattern,
-    const char* outputDirectory) {
+    const char* outputDirectory,
+    int expectedFiles = 0,
+    long long expectedEntries = -1,
+    double energyMinGeV = 1.0,
+    double energyMaxGeV = 1.0,
+    const char* trainJobsText = "0,1",
+    const char* validationJobsText = "2",
+    const char* testJobsText = "3",
+    int caloIndexMin = 0,
+    int caloIndexMax = 20) {
   gStyle->SetOptStat(0);
   gStyle->SetPalette(kViridis);
   gSystem->mkdir(outputDirectory, true);
@@ -69,20 +116,30 @@ void analyze_gamma_calo_ml(
 
   TChain events("events");
   const int filesAdded = events.Add(inputPattern);
-  if (filesAdded != 4) {
-    std::cerr << "ERROR: expected 4 ROOT files, added " << filesAdded << "\n";
+  if (filesAdded <= 0 || (expectedFiles > 0 && filesAdded != expectedFiles)) {
+    std::cerr << "ERROR: expected " << expectedFiles
+              << " ROOT files, added " << filesAdded << "\n";
     return;
   }
   const Long64_t entries = events.GetEntries();
-  if (entries != 200000) {
-    std::cerr << "ERROR: expected 200000 events, found " << entries << "\n";
+  if (expectedEntries >= 0 && entries != expectedEntries) {
+    std::cerr << "ERROR: expected " << expectedEntries
+              << " events, found " << entries << "\n";
     return;
   }
+  const auto trainJobs = parseJobs(trainJobsText);
+  const auto validationJobs = parseJobs(validationJobsText);
+  const auto testJobs = parseJobs(testJobsText);
+  const double plotEnergyMax = std::max(1.2 * energyMaxGeV, 0.1);
+  const auto energyEdges = logEdges(
+      energyMinGeV == energyMaxGeV ? energyMinGeV * 0.9 : energyMinGeV,
+      energyMinGeV == energyMaxGeV ? energyMaxGeV * 1.1 : energyMaxGeV,
+      energyMinGeV == energyMaxGeV ? 20 : 30);
 
   TH1D hCaloEdepAll("hCaloEdepAll",
-      "CALO deposited energy;E_{dep} [GeV];Events", 240, 0, 1.2);
+      "CALO deposited energy;E_{dep} [GeV];Events", 240, 0, plotEnergyMax);
   TH1D hCaloEdepConverted("hCaloEdepConverted",
-      "CALO deposited energy;E_{dep} [GeV];Events", 240, 0, 1.2);
+      "CALO deposited energy;E_{dep} [GeV];Events", 240, 0, plotEnergyMax);
   TH1D hCaloEdepUnconverted("hCaloEdepUnconverted",
       "CALO deposited energy;E_{dep} [GeV];Events", 200, 0, 0.02);
   TH1D hResponse("hResponse",
@@ -116,7 +173,7 @@ void analyze_gamma_calo_ml(
       120, 0, 12);
   TH2D hEdepVsConversionZ("hEdepVsConversionZ",
       "CALO response versus conversion depth;z_{conv} [cm];E_{dep} [GeV]",
-      180, -100, 80, 160, 0, 1.2);
+      180, -100, 80, 160, 0, plotEnergyMax);
   TH2D hCentroidXY("hCentroidXY",
       "Energy-weighted CALO shower centroid;ix;iy",
       100, -40, 40, 100, -40, 40);
@@ -126,6 +183,25 @@ void analyze_gamma_calo_ml(
   TH1D hEnergyByIz("hEnergyByIz",
       "Mean deposited-energy profile versus CALO iz;iz;Mean E per event [GeV]",
       81, -40.5, 40.5);
+  TH1D hTrueEnergy("hTrueEnergy",
+      "Generated gamma energy;E_{true} [GeV];Events", 240,
+      std::max(0.0, energyMinGeV), energyMaxGeV * 1.001);
+  TH2D hEdepVsTrueEnergy("hEdepVsTrueEnergy",
+      "CALO response;E_{true} [GeV];E_{dep} [GeV]", 160,
+      std::max(0.0, energyMinGeV), energyMaxGeV * 1.001,
+      160, 0, plotEnergyMax);
+  TH1D hTrueEnergyLog("hTrueEnergyLog",
+      "Generated gamma energy;E_{true} [GeV];Events",
+      energyEdges.size() - 1, energyEdges.data());
+  TH1D hConvertedTrueEnergy("hConvertedTrueEnergy",
+      "Converted gamma energy;E_{true} [GeV];Events",
+      energyEdges.size() - 1, energyEdges.data());
+  TH1D hActiveTrueEnergy("hActiveTrueEnergy",
+      "CALO-active gamma energy;E_{true} [GeV];Events",
+      energyEdges.size() - 1, energyEdges.data());
+  TH2D hResponseVsTrueEnergy("hResponseVsTrueEnergy",
+      "CALO response versus energy;E_{true} [GeV];E_{dep}/E_{true}",
+      energyEdges.size() - 1, energyEdges.data(), 180, 0, 1.5);
 
   std::vector<EventFeature> features;
   features.reserve(entries);
@@ -140,7 +216,11 @@ void analyze_gamma_calo_ml(
     events.GetEntry(globalEntry);
     EventFeature feature;
     feature.event = globalEntry;
-    feature.split = events.GetTreeNumber();
+    feature.job = jobFromFilename(events.GetCurrentFile()->GetName());
+    if (trainJobs.count(feature.job)) feature.split = 0;
+    else if (validationJobs.count(feature.job)) feature.split = 1;
+    else if (testJobs.count(feature.job)) feature.split = 2;
+    else feature.split = -1;
 
     int primaryTrack = -1;
     std::vector<double> pairEnergy;
@@ -223,6 +303,8 @@ void analyze_gamma_calo_ml(
       weightedZ2 += energy*z*z;
       maxCellEnergy = std::max(maxCellEnergy, energy);
       hEnergyByIz.Fill(iz, energy);
+      if (iz >= 0 && iz < static_cast<int>(feature.layerEdep.size()))
+        feature.layerEdep[iz] += energy;
     }
     if (feature.caloEdep > 0) {
       feature.centroidIx = weightedX / feature.caloEdep;
@@ -240,13 +322,34 @@ void analyze_gamma_calo_ml(
       feature.transverseRms = std::sqrt(varX + varY);
       feature.longitudinalRms = std::sqrt(varZ);
       feature.maxCellFraction = maxCellEnergy / feature.caloEdep;
+      feature.boundaryDistanceCells = std::min({
+          feature.centroidIx - caloIndexMin,
+          caloIndexMax - feature.centroidIx,
+          feature.centroidIy - caloIndexMin,
+          caloIndexMax - feature.centroidIy});
+      if (caloIndexMax >= 0 &&
+          caloIndexMax < static_cast<int>(feature.layerEdep.size()))
+        feature.lastLayerFraction =
+            feature.layerEdep[caloIndexMax] / feature.caloEdep;
     } else {
       ++zeroCaloCount;
     }
 
+    auto* stkEnergy = events.GetLeaf("stkhits.edep");
+    feature.nStkHits = stkEnergy ? stkEnergy->GetNdata() : 0;
+    for (int i = 0; i < feature.nStkHits; ++i)
+      feature.stkEdep += stkEnergy->GetValue(i);
+
+    hTrueEnergy.Fill(feature.trueEnergy);
+    hTrueEnergyLog.Fill(feature.trueEnergy);
     hCaloEdepAll.Fill(feature.caloEdep);
+    hEdepVsTrueEnergy.Fill(feature.trueEnergy, feature.caloEdep);
+    if (feature.trueEnergy > 0)
+      hResponseVsTrueEnergy.Fill(
+          feature.trueEnergy, feature.caloEdep / feature.trueEnergy);
     if (feature.converted) {
       ++convertedCount;
+      hConvertedTrueEnergy.Fill(feature.trueEnergy);
       hCaloEdepConverted.Fill(feature.caloEdep);
       if (feature.trueEnergy > 0)
         hResponse.Fill(feature.caloEdep / feature.trueEnergy);
@@ -257,7 +360,7 @@ void analyze_gamma_calo_ml(
         hPairEnergyShare.Fill(feature.pairEnergyShare);
       if (!std::isnan(feature.pairOpeningDeg))
         hPairOpening.Fill(feature.pairOpeningDeg);
-      if (feature.split <= 1 && feature.caloEdep > 0) {
+      if (feature.split == 0 && feature.caloEdep > 0) {
         calibrationEdepSum += feature.caloEdep;
         ++calibrationCount;
       }
@@ -267,6 +370,7 @@ void analyze_gamma_calo_ml(
       hCaloEdepUnconverted.Fill(feature.caloEdep);
     }
     if (feature.caloEdep > 0) {
+      hActiveTrueEnergy.Fill(feature.trueEnergy);
       hNCells.Fill(feature.nCells);
       hNCells1MeV.Fill(feature.nCells1MeV);
       hMaxCellFraction.Fill(feature.maxCellFraction);
@@ -282,30 +386,54 @@ void analyze_gamma_calo_ml(
       calibrationCount ? calibrationEdepSum/calibrationCount : 0;
   const double calibrationScale =
       calibrationMean > 0 ? 1.0/calibrationMean : 0;
+  TH1D hConversionEfficiency(hConvertedTrueEnergy);
+  hConversionEfficiency.SetName("hConversionEfficiency");
+  hConversionEfficiency.SetTitle(
+      "First-pair conversion fraction;E_{true} [GeV];Fraction");
+  hConversionEfficiency.Divide(
+      &hConvertedTrueEnergy, &hTrueEnergyLog, 1.0, 1.0, "B");
+  TH1D hActiveEfficiency(hActiveTrueEnergy);
+  hActiveEfficiency.SetName("hActiveEfficiency");
+  hActiveEfficiency.SetTitle(
+      "CALO-active fraction;E_{true} [GeV];Fraction");
+  hActiveEfficiency.Divide(
+      &hActiveTrueEnergy, &hTrueEnergyLog, 1.0, 1.0, "B");
   TH1D hBaselineReco("hBaselineReco",
       "Independent-test baseline energy;E_{reco}=E_{dep}/<E_{dep}>_{train} [GeV];Events",
-      240, 0, 1.8);
+      240, 0, std::max(1.8 * energyMaxGeV, 0.1));
   for (const auto& feature : features) {
-    if (feature.split == 3 && feature.converted && feature.caloEdep > 0)
-      hBaselineReco.Fill(feature.caloEdep * calibrationScale);
+    if (feature.split == 2 && feature.converted && feature.caloEdep > 0) {
+      if (std::abs(energyMaxGeV - energyMinGeV) < 1e-12)
+        hBaselineReco.Fill(feature.caloEdep * calibrationScale *
+                           energyMinGeV);
+    }
   }
 
   std::ofstream csv(outDir + "/event_features.csv");
-  csv << "event,split,true_energy_GeV,converted,unconverted_final,"
+  csv << "event,job_id,split,true_energy_GeV,converted,unconverted_final,"
          "conversion_x_cm,conversion_y_cm,conversion_z_cm,calo_edep_GeV,"
          "n_cells,n_cells_gt_1MeV,n_cells_gt_20MeV,centroid_ix,"
          "centroid_iy,centroid_iz,transverse_rms_cells,longitudinal_rms_layers,"
-         "max_cell_fraction,pair_energy_share,pair_opening_deg\n";
+         "max_cell_fraction,boundary_distance_cells,last_layer_fraction,"
+         "n_stk_hits,stk_edep_GeV,pair_energy_share,pair_opening_deg";
+  for (int layer = 0; layer < 21; ++layer)
+    csv << ",layer_edep_" << layer << "_GeV";
+  csv << '\n';
   csv << std::setprecision(9);
   for (const auto& f : features) {
-    csv << f.event << ',' << f.split << ',' << f.trueEnergy << ','
+    csv << f.event << ',' << f.job << ',' << f.split << ','
+        << f.trueEnergy << ','
         << f.converted << ',' << f.unconvertedFinal << ','
         << f.convX << ',' << f.convY << ',' << f.convZ << ','
         << f.caloEdep << ',' << f.nCells << ',' << f.nCells1MeV << ','
         << f.nCells20MeV << ',' << f.centroidIx << ',' << f.centroidIy << ','
         << f.centroidIz << ',' << f.transverseRms << ','
         << f.longitudinalRms << ',' << f.maxCellFraction << ','
-        << f.pairEnergyShare << ',' << f.pairOpeningDeg << '\n';
+        << f.boundaryDistanceCells << ',' << f.lastLayerFraction << ','
+        << f.nStkHits << ',' << f.stkEdep << ','
+        << f.pairEnergyShare << ',' << f.pairOpeningDeg;
+    for (double layerEnergy : f.layerEdep) csv << ',' << layerEnergy;
+    csv << '\n';
   }
 
   hEnergyByIz.Scale(1.0 / entries);
@@ -327,6 +455,14 @@ void analyze_gamma_calo_ml(
   hCentroidXY.Write();
   hConversionXY.Write();
   hEnergyByIz.Write();
+  hTrueEnergy.Write();
+  hTrueEnergyLog.Write();
+  hConvertedTrueEnergy.Write();
+  hActiveTrueEnergy.Write();
+  hConversionEfficiency.Write();
+  hActiveEfficiency.Write();
+  hEdepVsTrueEnergy.Write();
+  hResponseVsTrueEnergy.Write();
   hBaselineReco.Write();
   output.Close();
 
@@ -379,11 +515,46 @@ void analyze_gamma_calo_ml(
   hPairEnergyShare.SetLineWidth(2);
   hPairEnergyShare.Draw("hist");
   saveCanvas(canvas, outDir, "10_pair_energy_share");
+  canvas.Clear();
+  hTrueEnergy.SetLineColor(kBlue+2);
+  hTrueEnergy.SetLineWidth(2);
+  hTrueEnergy.Draw("hist");
+  saveCanvas(canvas, outDir, "11_true_energy");
+  canvas.Clear();
+  hEdepVsTrueEnergy.Draw("colz");
+  saveCanvas(canvas, outDir, "12_edep_vs_true_energy");
+  canvas.Clear();
+  canvas.SetLogx(true);
+  hTrueEnergyLog.SetLineColor(kBlue+2);
+  hTrueEnergyLog.SetLineWidth(2);
+  hTrueEnergyLog.Draw("hist");
+  saveCanvas(canvas, outDir, "13_true_energy_log_bins");
+  canvas.Clear();
+  hConversionEfficiency.SetMinimum(0);
+  hConversionEfficiency.SetMaximum(1.05);
+  hConversionEfficiency.SetLineColor(kMagenta+1);
+  hConversionEfficiency.SetLineWidth(2);
+  hConversionEfficiency.Draw("hist e");
+  saveCanvas(canvas, outDir, "14_conversion_efficiency_vs_energy");
+  canvas.Clear();
+  hActiveEfficiency.SetMinimum(0);
+  hActiveEfficiency.SetMaximum(1.05);
+  hActiveEfficiency.SetLineColor(kGreen+2);
+  hActiveEfficiency.SetLineWidth(2);
+  hActiveEfficiency.Draw("hist e");
+  saveCanvas(canvas, outDir, "15_calo_active_efficiency_vs_energy");
+  canvas.Clear();
+  hResponseVsTrueEnergy.Draw("colz");
+  saveCanvas(canvas, outDir, "16_response_vs_true_energy");
+  canvas.SetLogx(false);
 
   std::ofstream summary(outDir + "/numeric_summary.txt");
   summary << std::setprecision(9)
           << "files=" << filesAdded << "\n"
           << "events=" << entries << "\n"
+          << "expected_events=" << expectedEntries << "\n"
+          << "energy_min_GeV=" << energyMinGeV << "\n"
+          << "energy_max_GeV=" << energyMaxGeV << "\n"
           << "converted=" << convertedCount << "\n"
           << "unconverted_final=" << unconvertedCount << "\n"
           << "zero_calo_edep=" << zeroCaloCount << "\n"
@@ -398,7 +569,8 @@ void analyze_gamma_calo_ml(
           << "test_reco_mean_GeV=" << hBaselineReco.GetMean() << "\n"
           << "test_reco_rms_GeV=" << hBaselineReco.GetRMS() << "\n"
           << "test_reco_relative_rms=" <<
-              hBaselineReco.GetRMS()/hBaselineReco.GetMean() << "\n"
+              (hBaselineReco.GetMean() > 0
+                  ? hBaselineReco.GetRMS()/hBaselineReco.GetMean() : 0) << "\n"
           << "n_cells_1MeV_mean=" << hNCells1MeV.GetMean() << "\n"
           << "transverse_rms_mean_cells=" << hTransverseRms.GetMean() << "\n"
           << "longitudinal_rms_mean_layers=" << hLongitudinalRms.GetMean() << "\n"
@@ -409,6 +581,7 @@ void analyze_gamma_calo_ml(
             << "converted=" << convertedCount << "\n"
             << "unconverted_final=" << unconvertedCount << "\n"
             << "test_relative_resolution=" <<
-               hBaselineReco.GetRMS()/hBaselineReco.GetMean() << "\n"
+               (hBaselineReco.GetMean() > 0
+                  ? hBaselineReco.GetRMS()/hBaselineReco.GetMean() : 0) << "\n"
             << "output=" << outDir << "\n";
 }

@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "dataset_id": "gamma1GeV_v2025a_prod04",
+  "status": "frozen",
+  "particle": "gamma",
+  "geometry": "v2025a/v2025a-scdX.xml",
+  "generator": {
+    "mode": "vertical-5x5",
+    "spectrum": "mono",
+    "energy_min_GeV": 1.0,
+    "energy_max_GeV": 1.0
+  },
+  "production": {
+    "root_glob": "/herdfs/user/zhangjin0101/HERD/results/production/gamma1GeV_v2025a_prod04/gamma_*.root",
+    "expected_jobs": [0, 1, 2, 3],
+    "events_per_job": 50000,
+    "expected_events": 200000,
+    "seed_first": 100000,
+    "seed_last": 100003
+  },
+  "split_jobs": {
+    "train": [0, 1],
+    "validation": [2],
+    "test": [3]
+  },
+  "software": {
+    "herdos_release": "v00-10",
+    "personal_install": "/scratchfs/herd/zhangjin0101/HERDOS/v2025a/install",
+    "truth_schema": "primary=bit0, first_pair=bit1, unconverted_final=bit2"
+  },
+  "calo_index": {
+    "min": 0,
+    "max": 20,
+    "unit": "cell/layer index"
+  }
+}

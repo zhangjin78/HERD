@@ -5,16 +5,32 @@
 /figures/
 /enc/
 
-# Common scientific data and logs
+# Scientific data, derived features, models, and logs
 *.root
+*.csv
+*.csv.gz
+*.h5
+*.hdf5
+*.parquet
+*.npz
+*.npy
+*.pt
+*.pth
+*.onnx
 *.log
 *.out
 *.err
 core
 core.*
 
+# Python and ROOT build caches
+__pycache__/
+*.py[cod]
+*_C.d
+*_C.so
+*_C_ACLiC_dict_rdict.pcm
+
 # Local editor and OS files
 .DS_Store
 *~
 *.swp
-

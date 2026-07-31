@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "dataset_id": "gamma_0p05to20GeV_powerlaw_m1_v2025a_prod05",
+  "status": "partial",
+  "particle": "gamma",
+  "geometry": "v2025a/v2025a-scdX.xml",
+  "generator": {
+    "mode": "vertical-5x5",
+    "spectrum": "powerlaw",
+    "powerlaw_index": -1.0,
+    "energy_min_GeV": 0.05,
+    "energy_max_GeV": 20.0
+  },
+  "production": {
+    "root_glob": "/herdfs/user/zhangjin0101/HERD/results/production/gamma_0p05to20GeV_powerlaw_m1_v2025a_prod05/gamma_*.root",
+    "expected_jobs": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    "events_per_job": 100000,
+    "expected_events": 1000000,
+    "seed_first": 100000,
+    "seed_last": 100009
+  },
+  "split_jobs": {
+    "train": [0, 1, 2, 3, 4, 5],
+    "validation": [6, 7],
+    "test": [8, 9]
+  },
+  "software": {
+    "herdos_release": "v00-10",
+    "personal_install": "/scratchfs/herd/zhangjin0101/HERDOS/v2025a/install",
+    "truth_schema": "primary=bit0, first_pair=bit1, unconverted_final=bit2"
+  },
+  "calo_index": {
+    "min": 0,
+    "max": 20,
+    "unit": "cell/layer index"
+  }
+}
