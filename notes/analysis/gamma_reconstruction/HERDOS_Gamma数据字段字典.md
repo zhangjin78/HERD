@@ -49,3 +49,11 @@
 
 STK 字段只用于后续 CALO+STK 对照。若该 HERDOS 输出版本中 `stkhits.edep`
 恒为零，应使用 hit 位置和轨迹信息重新定义 STK 输入，不能把零值当成有效能量。
+
+## 稀疏张量接口
+
+`extract_sparse_detector_tensors.C` 每个事件保存等长的
+`calo_ix/calo_iy/calo_iz/calo_edep_GeV` 向量，以及 STK 的
+`cellCode/position/edep` 向量。3D CNN 在数据加载阶段将 CALO 向量散射到
+`[1, iz, iy, ix] = [1, 21, 21, 21]` 张量。原始 ROOT 和稀疏 ROOT 均按
+生产 job 保持 train/validation/test 边界。
