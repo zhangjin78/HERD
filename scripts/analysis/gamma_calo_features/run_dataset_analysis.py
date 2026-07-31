@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 from pathlib import Path
 
@@ -172,11 +173,27 @@ def sha256(path):
     return digest.hexdigest()
 
 
-def publish(scratch, destination):
-    if destination.exists():
-        raise RuntimeError(f"refusing to overwrite existing result: {destination}")
+def publish(scratch, destination, mode):
     destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(scratch, destination)
+    if mode == "directory":
+        if destination.exists():
+            raise RuntimeError(f"refusing to overwrite existing result: {destination}")
+        shutil.copytree(scratch, destination)
+        return destination, None
+    final = destination.with_suffix(".tar")
+    partial = final.with_suffix(final.suffix + ".partial")
+    if final.exists() or partial.exists():
+        raise RuntimeError(f"refusing to overwrite existing package: {final}")
+    try:
+        with tarfile.open(partial, "w") as archive:
+            for path in sorted(scratch.rglob("*")):
+                archive.add(path, arcname=path.relative_to(scratch))
+        package_hash = sha256(partial)
+        partial.rename(final)
+        return final, package_hash
+    except Exception:
+        # Keep a failed package explicitly marked .partial for diagnosis.
+        raise
 
 
 def main():
@@ -196,6 +213,12 @@ def main():
     parser.add_argument("--validate-only", action="store_true")
     parser.add_argument("--checksums", action="store_true")
     parser.add_argument("--tag")
+    parser.add_argument(
+        "--publish-mode",
+        choices=("tar", "directory"),
+        default="tar",
+        help="tar is the safe default for HERDFS; directory is for local /tmp tests",
+    )
     parser.add_argument(
         "--results-base",
         type=Path,
@@ -276,8 +299,12 @@ def main():
         (scratch / "products_manifest.json").write_text(
             json.dumps(products, indent=2, ensure_ascii=False) + "\n"
         )
-        publish(scratch, destination)
-        print(f"PUBLISHED={destination}")
+        published, package_hash = publish(
+            scratch, destination, args.publish_mode
+        )
+        print(f"PUBLISHED={published}")
+        if package_hash:
+            print(f"PACKAGE_SHA256={package_hash}")
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 

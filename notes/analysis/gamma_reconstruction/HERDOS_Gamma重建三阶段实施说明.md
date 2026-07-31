@@ -87,3 +87,6 @@ python3 scripts/analysis/gamma_calo_features/run_dataset_analysis.py \
 ```
 
 输出目录自动带 `complete` 或 `partial_NofM` 标签，且拒绝覆盖已有结果。
+正式 HERDFS 发布默认为单一 tar 包并采用 `.partial` 后原子改名，避免多文件
+复制导致零字节半成品。需要在节点 `/tmp` 展开检查时显式使用
+`--publish-mode directory --results-base /tmp/...`。
