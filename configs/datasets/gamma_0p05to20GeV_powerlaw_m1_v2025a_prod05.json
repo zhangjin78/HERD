@@ -1,7 +1,8 @@
 {
   "schema_version": 1,
   "dataset_id": "gamma_0p05to20GeV_powerlaw_m1_v2025a_prod05",
-  "status": "partial",
+  "status": "frozen",
+  "frozen_at": "2026-07-31",
   "particle": "gamma",
   "geometry": "v2025a/v2025a-scdX.xml",
   "generator": {
@@ -30,8 +31,12 @@
     "truth_schema": "primary=bit0, first_pair=bit1, unconverted_final=bit2"
   },
   "calo_index": {
-    "min": 0,
-    "max": 20,
+    "transverse_min": 0,
+    "transverse_max": 22,
+    "layer_min": 0,
+    "layer_max": 20,
+    "last_layer": 0,
+    "incoming_direction": "-z",
     "unit": "cell/layer index"
   }
 }

@@ -16,6 +16,7 @@ ROOT 文件中的 `mcparts` 不能确认 gamma 是否发生了
 - 个人开发分支：`zhangjin/gamma-conversion-truth`
 - 初始提交：`0df164a Save gamma conversion products in MC truth`
 - 范围收紧提交：`da985c9 Keep only primary gamma first conversion truth`
+- 未转换终态提交：`e93260b Save final state of unconverted primary gamma`
 - 源码工作树：`/scratchfs/herd/zhangjin0101/HERDOS/v2025a/source`
 - 安装目录：`/scratchfs/herd/zhangjin0101/HERDOS/v2025a/install`
 - 官方仓库 push 地址已禁用，不要把个人修改推送到课题组仓库。
@@ -39,9 +40,41 @@ ROOT 文件中的 `mcparts` 不能确认 gamma 是否发生了
 |---|---|
 | 初级粒子 | `(simstat & 1) != 0` |
 | 初级 gamma 的第一对转换产物 | `(simstat & 2) != 0` |
+| 未转换初级 gamma 的终态快照 | `(simstat & 4) != 0` |
 
 严格确认第一次对转换时，应找到同一顶点的一对 `PDG=11` 和 `PDG=-11`，
 二者 `parentID` 都等于初级 gamma 的 `trackID`，并且 `simstat & 2` 非零。
+
+如果初级 gamma 到跟踪结束仍未通过 Geant4 `conv` 过程发生对转换，则额外保存
+一条 `PDG=22`、`simstat & 4` 非零的终态快照：
+
+- `vertex`：最终位置，单位 cm；
+- `momentum`：最终三动量，单位 GeV；
+- 最终能量：光子满足 `E = |p|`，由三动量模计算，单位 GeV。
+
+该终态快照不设置 `kPrimary` 位，因此不会与原始入射 gamma 记录混淆；发生首次
+对转换的事例仍只保存原有初级 gamma 和直接 e-/e+ 转换产物。
+
+## 未转换 gamma 终态验证
+
+使用 v2025a-scdX、1 GeV gamma、vertical-5x5、固定随机种子运行 100 个事例：
+
+| 分类 | 事例数 |
+|---|---:|
+| 保存首次 e-/e+ 对 | 78 |
+| 保存未转换 gamma 终态 | 22 |
+| 同时属于两类 | 0 |
+| 两类均未记录 | 0 |
+
+抽查的未转换 gamma 均到达世界边界 `z=-500 cm`，最终动量仍为
+`(0,0,-1) GeV`，最终能量仍为 1 GeV。这说明这些事例中的 gamma 完整穿过了
+当前几何而未发生相互作用。
+
+验证文件：
+
+```text
+/herdfs/user/zhangjin0101/HERD/results/tests/v2025a/gamma_1GeV_100_with_unconverted_final.root
+```
 
 ## 已完成验证
 
@@ -114,6 +147,7 @@ development/herdos-patches/0002-Keep-only-primary-gamma-first-conversion-truth.p
 git switch -c zhangjin/gamma-conversion-truth
 git am /herdfs/user/zhangjin0101/HERD/development/herdos-patches/0001-Save-gamma-conversion-products-in-MC-truth.patch
 git am /herdfs/user/zhangjin0101/HERD/development/herdos-patches/0002-Keep-only-primary-gamma-first-conversion-truth.patch
+git am /herdfs/user/zhangjin0101/HERD/development/herdos-patches/0003-Save-final-state-of-unconverted-primary-gamma.patch
 cmake --build /scratchfs/herd/zhangjin0101/HERDOS/v2025a/build --target SimConfiger -j4
 cmake --install /scratchfs/herd/zhangjin0101/HERDOS/v2025a/build
 ```
@@ -125,6 +159,7 @@ cmake --install /scratchfs/herd/zhangjin0101/HERDOS/v2025a/build
 1. 这是个人分析扩展，不是课题组官方版本。
 2. 不要修改或启用官方 GitLab 的 push 地址。
 3. 当前只保存初级入射 gamma 直接转换产生的第一对电子和正电子。
+   未转换的初级 gamma 额外保存一条终态快照。
 4. 如果以后研究完整电磁簇射真值，需要重新设计独立开关，不能直接用当前精简文件。
 5. 原有 ROOT schema 没有变化，旧读取程序仍可读取新文件。
 6. 分析时必须同时检查 `simstat & 2`、PDG 和 `parentID`，不要只凭电子/正电子判断首次转换。
@@ -152,3 +187,5 @@ root -l -b -q \
 ```
 
 输出包括转换顶点、e⁻/e⁺ 三动量、单位方向向量、相对初级 gamma 的偏转角和方位角。
+对于未转换事例，还会输出 `UNCONVERTED_GAMMA_FINAL`，包括最终位置、最终三动量
+和由三动量模计算的最终能量。

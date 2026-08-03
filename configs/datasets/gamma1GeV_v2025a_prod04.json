@@ -29,8 +29,12 @@
     "truth_schema": "primary=bit0, first_pair=bit1, unconverted_final=bit2"
   },
   "calo_index": {
-    "min": 0,
-    "max": 20,
+    "transverse_min": 0,
+    "transverse_max": 22,
+    "layer_min": 0,
+    "layer_max": 20,
+    "last_layer": 0,
+    "incoming_direction": "-z",
     "unit": "cell/layer index"
   }
 }

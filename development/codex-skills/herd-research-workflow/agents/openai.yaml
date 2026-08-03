@@ -1,0 +1,4 @@
+interface:
+  display_name: "HERD Research Workflow"
+  short_description: "Organize HERD jobs, data, analysis, figures, and Git safely"
+  default_prompt: "Use $herd-research-workflow to organize and execute this HERD research task reproducibly."

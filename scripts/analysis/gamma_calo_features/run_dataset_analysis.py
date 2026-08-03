@@ -134,6 +134,11 @@ def run_root_analysis(config, manifest, macro, scratch):
     generator = config["generator"]
     production = config["production"]
     calo = config["calo_index"]
+    transverse_min = calo.get("transverse_min", calo.get("min", 0))
+    transverse_max = calo.get("transverse_max", calo.get("max", 22))
+    layer_min = calo.get("layer_min", 0)
+    layer_max = calo.get("layer_max", 20)
+    last_layer = calo.get("last_layer", layer_min)
     expression = (
         f'{macro}("{root_quote(production["root_glob"])}",'
         f'"{root_quote(str(scratch))}",'
@@ -142,7 +147,8 @@ def run_root_analysis(config, manifest, macro, scratch):
         f'"{comma_jobs(config, "train")}",'
         f'"{comma_jobs(config, "validation")}",'
         f'"{comma_jobs(config, "test")}",'
-        f'{calo["min"]},{calo["max"]})'
+        f'{transverse_min},{transverse_max},'
+        f'{layer_min},{layer_max},{last_layer})'
     )
     completed = subprocess.run(
         ["root", "-l", "-b", "-q", expression],
@@ -184,16 +190,22 @@ def publish(scratch, destination, mode):
     partial = final.with_suffix(final.suffix + ".partial")
     if final.exists() or partial.exists():
         raise RuntimeError(f"refusing to overwrite existing package: {final}")
+    local_package = scratch.parent / f"{scratch.name}.tar"
     try:
-        with tarfile.open(partial, "w") as archive:
+        with tarfile.open(local_package, "w") as archive:
             for path in sorted(scratch.rglob("*")):
                 archive.add(path, arcname=path.relative_to(scratch))
-        package_hash = sha256(partial)
+        package_hash = sha256(local_package)
+        shutil.copyfile(local_package, partial)
+        if sha256(partial) != package_hash:
+            raise RuntimeError(f"package checksum mismatch: {partial}")
         partial.rename(final)
         return final, package_hash
     except Exception:
         # Keep a failed package explicitly marked .partial for diagnosis.
         raise
+    finally:
+        local_package.unlink(missing_ok=True)
 
 
 def publish_figures(scratch, figures_base, dataset_id, tag):
